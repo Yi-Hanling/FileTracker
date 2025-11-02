@@ -1,0 +1,11 @@
+name: filetracker
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - watchdog
+  - pillow
+  - pip
+  - pip:
+      - customtkinter
