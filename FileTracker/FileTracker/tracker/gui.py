@@ -1,16 +1,17 @@
 import threading
+import os
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
-from tracker.file_monitor import FileMonitor
-from tracker.record_manager import RecordManager
-
+from .file_monitor import FileMonitor
+from .record_manager import RecordManager
 
 class FileTrackerGUI:
-    """文件监控图形界面"""
+    """文件监控图形界面（customtkinter）"""
 
-    def __init__(self, monitor_dirs=None):
-        self.record_manager = RecordManager()
+    def __init__(self, record_manager=None, monitor_dirs=None):
+        # 如果没有传入 RecordManager，则创建一个
+        self.record_manager = record_manager if record_manager else RecordManager()
         self.monitor_dirs = monitor_dirs
         self.monitor = None
 
@@ -24,7 +25,7 @@ class FileTrackerGUI:
         self.create_widgets()
         self.start_monitoring_thread()
 
-        # ✅ 绑定窗口关闭事件
+        # 绑定窗口关闭事件
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.window.mainloop()
@@ -80,6 +81,9 @@ class FileTrackerGUI:
 
     def start_monitoring_thread(self):
         """启动后台监控线程"""
+        if not self.monitor_dirs:
+            from .file_monitor import get_default_monitor_dirs
+            self.monitor_dirs = get_default_monitor_dirs()
         self.monitor = FileMonitor(self.monitor_dirs, self.record_manager)
         thread = threading.Thread(target=self.monitor.start, daemon=True)
         thread.start()

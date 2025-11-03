@@ -1,14 +1,9 @@
-import os
+from tracker.record_manager import RecordManager
+# 如果想用 Tkinter 版本
 from tracker.gui import FileTrackerGUI
-from tracker.file_monitor import get_default_monitor_dirs
+# 如果想用 customtkinter 版本
+# from tracker.gui_custom import FileTrackerGUI
 
 if __name__ == "__main__":
-    # 自动扫描磁盘，选择要监控的盘符（避开系统盘敏感目录）
-    monitor_dirs = get_default_monitor_dirs()
-
-    print("✅ 将监控以下目录：")
-    for d in monitor_dirs:
-        print("  ", d)
-
-    # 启动图形界面
-    app = FileTrackerGUI(monitor_dirs=monitor_dirs)
+    record_manager = RecordManager()
+    gui = FileTrackerGUI(record_manager)

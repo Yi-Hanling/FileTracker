@@ -3,18 +3,57 @@ import time
 import psutil
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import json
+
+# ================================
+# 自动生成黑名单目录
+# ================================
+def get_exclude_dirs():
+    """
+    自动生成黑名单目录
+    包括系统目录、临时目录、隐藏文件夹、安装程序缓存等
+    """
+    user_home = os.path.expanduser("~")  # 当前用户主目录
+
+    exclude_dirs = [
+        # 系统目录
+        "C:\\Windows",
+        "C:\\Program Files",
+        "C:\\Program Files (x86)",
+        "C:\\ProgramData",
+        "C:\\$Recycle.Bin",
+        "C:\\Recovery",
+        "C:\\PerfLogs",
+        "C:\\System Volume Information",
+        "C:\\Config.Msi",
+
+        # 公共用户目录
+        os.path.join("C:\\Users", "Default"),
+        os.path.join("C:\\Users", "Public"),
+        os.path.join("C:\\Users", "All Users"),
+
+        # 用户目录下系统隐藏文件夹
+        os.path.join(user_home, "AppData"),
+        os.path.join(user_home, "Local"),
+        os.path.join(user_home, "LocalLow"),
+        os.path.join(user_home, "Roaming"),
+        os.path.join(user_home, "Temp"),
+        os.path.join(user_home, "cache"),
+        os.path.join(user_home, "__pycache__"),
+
+        # 特定应用目录
+        "WindowsApps",     # Microsoft Store
+        "Microsoft",       # Office / Edge / OneDrive 等
+        "OneDrive",        # OneDrive 同步文件
+        "WeChat Files\\Cache",
+        "WeChat Files\\Temp",
+        # "Steam",         # 如果需要监控 Steam 游戏库，可注释掉
+    ]
+
+    return exclude_dirs
 
 
-# 🚫 忽略的目录（系统目录、微信缓存、临时文件等）
-EXCLUDE_DIRS = [
-    "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
-    "C:\\ProgramData", "C:\\Users\\Public",
-    "C:\\Users\\Default", "C:\\Users\\All Users",
-    "C:\\$Recycle.Bin", "C:\\Recovery", "C:\\PerfLogs",
-    "C:\\Users\\17295\\Documents\\WeChat Files",
-    "AppData", "Temp", "cache", "__pycache__"
-]
-
+EXCLUDE_DIRS = get_exclude_dirs()
 
 def is_excluded(path: str) -> bool:
     """判断路径是否应被排除"""
@@ -22,9 +61,50 @@ def is_excluded(path: str) -> bool:
     return any(ex.lower() in path for ex in EXCLUDE_DIRS)
 
 
-class FileEventHandler(FileSystemEventHandler):
-    """文件系统事件处理类"""
+# ================================
+# 文件记录管理器
+# ================================
+class RecordManager:
+    """管理文件保存路径记录"""
+    def __init__(self, history_file="data/history.json", max_records=50):
+        self.history_file = history_file
+        self.max_records = max_records
+        os.makedirs(os.path.dirname(self.history_file), exist_ok=True)
+        if not os.path.exists(self.history_file):
+            with open(self.history_file, "w", encoding="utf-8") as f:
+                json.dump([], f, ensure_ascii=False, indent=4)
 
+    def load_records(self):
+        try:
+            with open(self.history_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return []
+
+    def save_records(self, records):
+        with open(self.history_file, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=4)
+
+    def add_record(self, folder_path):
+        records = self.load_records()
+        if folder_path in records:
+            records.remove(folder_path)
+        records.insert(0, folder_path)
+        records = records[:self.max_records]
+        self.save_records(records)
+
+    def get_records(self):
+        return self.load_records()
+
+    def clear_records(self):
+        self.save_records([])
+
+
+# ================================
+# 文件监控处理类
+# ================================
+class FileEventHandler(FileSystemEventHandler):
+    """处理文件创建事件"""
     def __init__(self, record_manager):
         super().__init__()
         self.record_manager = record_manager
@@ -37,17 +117,16 @@ class FileEventHandler(FileSystemEventHandler):
                 self.record_manager.add_record(folder_path)
 
 
-
+# ================================
+# 文件监控器
+# ================================
 class FileMonitor:
-    """文件监控器"""
-
     def __init__(self, monitor_dirs, record_manager):
         self.monitor_dirs = monitor_dirs
         self.record_manager = record_manager
         self.observer = Observer()
 
     def start(self):
-        """开始监控"""
         event_handler = FileEventHandler(self.record_manager)
         for directory in self.monitor_dirs:
             if os.path.exists(directory):
@@ -65,25 +144,34 @@ class FileMonitor:
             self.stop()
 
     def stop(self):
-        """停止监控"""
         if self.observer.is_alive():
             self.observer.stop()
             self.observer.join(timeout=3)
             print("🛑 文件监控已停止。")
 
 
+# ================================
+# 自动获取监控盘符
+# ================================
 def get_default_monitor_dirs():
-    """自动检测所有盘符并过滤系统盘常见路径"""
+    """监控所有盘符，但排除系统光驱和移动设备"""
     monitor_dirs = []
     partitions = psutil.disk_partitions(all=False)
-
     for p in partitions:
-        drive = p.device  # 如 "C:\\"
-        # 跳过无效驱动器或特殊盘
+        drive = p.device
         if "cdrom" in p.opts or "removable" in p.opts.lower():
             continue
-        # 仅添加存在的路径
         if os.path.exists(drive):
             monitor_dirs.append(drive)
-
     return monitor_dirs
+
+
+# ================================
+# 启动示例
+# ================================
+if __name__ == "__main__":
+    record_manager = RecordManager()
+    monitor_dirs = get_default_monitor_dirs()
+    print("✅ 正在监控以下盘符：", monitor_dirs)
+    monitor = FileMonitor(monitor_dirs, record_manager)
+    monitor.start()
